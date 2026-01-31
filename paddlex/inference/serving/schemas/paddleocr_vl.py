@@ -51,6 +51,7 @@ class InferRequest(ocr.BaseInferRequest):
     markdownIgnoreLabels: Optional[List[str]] = None
     prettifyMarkdown: bool = True
     showFormulaNumber: bool = False
+    skipMarkdownImages: bool = False
     visualize: Optional[bool] = None
 
 
