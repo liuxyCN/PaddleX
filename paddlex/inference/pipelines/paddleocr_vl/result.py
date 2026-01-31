@@ -571,13 +571,14 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
 
         return JsonMixin._to_json(data, *args, **kwargs)
 
-    def _to_markdown(self, pretty=True, show_formula_number=False) -> dict:
+    def _to_markdown(self, pretty=True, show_formula_number=False, skip_images=False) -> dict:
         """
         Save the parsing result to a Markdown file.
 
         Args:
             pretty (Optional[bool]): whether to pretty markdown by HTML, default by True.
             show_formula_number (bool): whether to show formula numbers.
+            skip_images (bool): whether to skip image tags in markdown text.
 
         Returns:
             dict: Markdown information with text and images.
@@ -592,7 +593,17 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
         else:
             original_image_width = self["width"]
 
-        if pretty:
+        if skip_images:
+            # When skip_images is True, don't generate image tags in markdown
+            if pretty:
+                format_text_func = lambda block: format_centered_by_html(
+                    format_text_plain_func(block)
+                )
+            else:
+                format_text_func = lambda block: block.content
+            format_image_func = lambda block: ""
+            format_seal_func = lambda block: ""
+        elif pretty:
             format_text_func = lambda block: format_centered_by_html(
                 format_text_plain_func(block)
             )
@@ -622,9 +633,11 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
             )
 
         format_chart_func = (
-            format_chart2table_func
-            if self["model_settings"]["use_chart_recognition"]
-            else format_image_func
+            (lambda block: "") if skip_images else (
+                format_chart2table_func
+                if self["model_settings"]["use_chart_recognition"]
+                else format_image_func
+            )
         )
 
         if not self["model_settings"].get("use_layout_detection", False):
@@ -704,13 +717,14 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
         )
         return None
 
-    def _to_markdown(self, pretty=True, show_formula_number=False) -> dict:
+    def _to_markdown(self, pretty=True, show_formula_number=False, skip_images=False) -> dict:
         """
         Save the parsing result to a Markdown file.
 
         Args:
             pretty (Optional[bool]): whether to pretty markdown by HTML, default by True.
             show_formula_number (bool): whether to show formula numbers.
+            skip_images (bool): whether to skip image tags in markdown text.
 
         Returns:
             dict: Markdown information with text and images.
@@ -725,7 +739,17 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
         else:
             original_image_width = self["width"]
 
-        if pretty:
+        if skip_images:
+            # When skip_images is True, don't generate image tags in markdown
+            if pretty:
+                format_text_func = lambda block: format_centered_by_html(
+                    format_text_plain_func(block)
+                )
+            else:
+                format_text_func = lambda block: block.content
+            format_image_func = lambda block: ""
+            format_seal_func = lambda block: ""
+        elif pretty:
             format_text_func = lambda block: format_centered_by_html(
                 format_text_plain_func(block)
             )
@@ -755,9 +779,11 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
             )
 
         format_chart_func = (
-            format_chart2table_func
-            if self["model_settings"]["use_chart_recognition"]
-            else format_image_func
+            (lambda block: "") if skip_images else (
+                format_chart2table_func
+                if self["model_settings"]["use_chart_recognition"]
+                else format_image_func
+            )
         )
 
         if pretty:

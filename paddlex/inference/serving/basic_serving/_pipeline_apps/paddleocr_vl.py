@@ -99,12 +99,13 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
         for i, (img, item) in enumerate(zip(images, result)):
             pruned_res = common.prune_result(item.json["res"])
             # XXX
+            skip_markdown_images = request.skipMarkdownImages
             md_data = item._to_markdown(
                 pretty=request.prettifyMarkdown,
                 show_formula_number=request.showFormulaNumber,
+                skip_images=skip_markdown_images,
             )
             md_text = md_data["markdown_texts"]
-            skip_markdown_images = request.skipMarkdownImages
             if skip_markdown_images:
                 md_imgs = {}
             else:
@@ -179,7 +180,7 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
         for i, page in enumerate(request.pages):
             orig_res = _to_original_result(page.prunedResult, i)
             original_results.append(orig_res)
-            if request.concatenatePages:
+            if request.concatenatePages and not request.skipMarkdownImages:
                 markdown_images.update(page.markdownImages)
 
         restructured_results = await serving_utils.call_async(
@@ -201,10 +202,11 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
             md_data = restructured_results[0]._to_markdown(
                 pretty=request.prettifyMarkdown,
                 show_formula_number=request.showFormulaNumber,
+                skip_images=request.skipMarkdownImages,
             )
             layout_parsing_result["markdown"] = dict(
                 text=md_data["markdown_texts"],
-                images=markdown_images,
+                images=markdown_images if not request.skipMarkdownImages else {},
             )
             layout_parsing_results.append(layout_parsing_result)
         else:
@@ -217,10 +219,11 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
                 md_data = new_res._to_markdown(
                     pretty=request.prettifyMarkdown,
                     show_formula_number=request.showFormulaNumber,
+                    skip_images=request.skipMarkdownImages,
                 )
                 layout_parsing_result["markdown"] = dict(
                     text=md_data["markdown_texts"],
-                    images=old_page.markdownImages,
+                    images=old_page.markdownImages if not request.skipMarkdownImages else {},
                 )
                 layout_parsing_results.append(layout_parsing_result)
 

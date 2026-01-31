@@ -236,6 +236,7 @@ class RestructurePagesRequest(BaseModel):
     concatenatePages: bool = False
     prettifyMarkdown: bool = True
     showFormulaNumber: bool = False
+    skipMarkdownImages: bool = False
     logId: Optional[str] = None
 
 
