@@ -734,7 +734,11 @@ class DetPostProcess:
             category_filtered_boxes = []
             for cat_id in np.unique(boxes[:, 0]):
                 category_boxes = boxes[boxes[:, 0] == cat_id]
-                category_threshold = threshold.get(int(cat_id), 0.5)
+                cat_id_int = int(cat_id)
+                # 支持字符串key和整数key两种格式
+                category_threshold = threshold.get(
+                    cat_id_int, threshold.get(str(cat_id_int), 0.5)
+                )
                 selected_indices = (category_boxes[:, 1] > category_threshold) & (
                     category_boxes[:, 0] > -1
                 )

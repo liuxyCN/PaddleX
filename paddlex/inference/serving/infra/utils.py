@@ -245,8 +245,14 @@ def file_to_images(
     max_num_imgs: Optional[int] = None,
 ) -> Union[Tuple[List[np.ndarray], ImageInfo], Tuple[List[np.ndarray], PDFInfo]]:
     if file_type == "IMAGE":
-        images = [image_bytes_to_array(file_bytes)]
-        data_info = get_image_info(images[0])
+        image = image_bytes_to_array(file_bytes)
+        if image is None:
+            # Skip invalid image and return empty list with default ImageInfo
+            images: List[np.ndarray] = []
+            data_info = ImageInfo(width=0, height=0)
+        else:
+            images = [image]
+            data_info = get_image_info(images[0])
     elif file_type == "PDF":
         images, data_info = read_pdf(file_bytes, max_num_imgs=max_num_imgs)
     else:

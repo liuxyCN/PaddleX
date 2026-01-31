@@ -62,6 +62,7 @@ class InferRequest(ocr.BaseInferRequest):
     vlmExtraArgs: Optional[dict] = None
     prettifyMarkdown: bool = True
     showFormulaNumber: bool = False
+    skipMarkdownImages: bool = False
     restructurePages: bool = False
     mergeTables: bool = True
     relevelTitles: bool = True
