@@ -246,6 +246,20 @@ def build_handle_funcs_dict(
     }
 
 
+def _markdown_skip_image_keep_text(
+    block, *, pretty: bool, show_content: bool, remove_symbol_if_pretty: bool
+) -> str:
+    """No image tags; emit recognized text only when ``show_content`` is True."""
+    if not show_content:
+        return ""
+    content = block.content if block.content is not None else ""
+    if not str(content).strip():
+        return ""
+    if pretty:
+        return format_centered_by_html(content, remove_symbol=remove_symbol_if_pretty)
+    return content
+
+
 @class_requires_deps("opencv-contrib-python")
 class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
     """
@@ -579,6 +593,9 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
             pretty (Optional[bool]): whether to pretty markdown by HTML, default by True.
             show_formula_number (bool): whether to show formula numbers.
             skip_images (bool): whether to skip image tags in markdown text.
+                If True, image/chart figures are omitted but recognized text (when
+                ``use_ocr_for_image_block`` / ``use_seal_recognition``) and chart
+                tables (when ``use_chart_recognition``) are still written.
 
         Returns:
             dict: Markdown information with text and images.
@@ -594,15 +611,24 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
             original_image_width = self["width"]
 
         if skip_images:
-            # When skip_images is True, don't generate image tags in markdown
             if pretty:
                 format_text_func = lambda block: format_centered_by_html(
                     format_text_plain_func(block)
                 )
             else:
                 format_text_func = lambda block: block.content
-            format_image_func = lambda block: ""
-            format_seal_func = lambda block: ""
+            format_image_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_ocr_for_image_block,
+                remove_symbol_if_pretty=not use_ocr_for_image_block,
+            )
+            format_seal_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_seal_recognition,
+                remove_symbol_if_pretty=False,
+            )
         elif pretty:
             format_text_func = lambda block: format_centered_by_html(
                 format_text_plain_func(block)
@@ -632,12 +658,13 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
                 block, use_seal_recognition
             )
 
+        use_chart_recognition = self["model_settings"].get(
+            "use_chart_recognition", False
+        )
         format_chart_func = (
-            (lambda block: "") if skip_images else (
-                format_chart2table_func
-                if self["model_settings"]["use_chart_recognition"]
-                else format_image_func
-            )
+            format_chart2table_func
+            if use_chart_recognition
+            else ((lambda block: "") if skip_images else format_image_func)
         )
 
         if not self["model_settings"].get("use_layout_detection", False):
@@ -666,7 +693,7 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
         markdown_info["markdown_images"] = {}
         for idx, block in enumerate(self["parsing_res_list"]):
             label = block.label
-            if block.image is not None:
+            if not skip_images and block.image is not None:
                 markdown_info["markdown_images"][block.image["path"]] = block.image[
                     "img"
                 ]
@@ -692,8 +719,9 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin):
         markdown_info["page_index"] = self["page_index"]
         markdown_info["input_path"] = self["input_path"]
         markdown_info["markdown_texts"] = markdown_content
-        for img in self["imgs_in_doc"]:
-            markdown_info["markdown_images"][img["path"]] = img["img"]
+        if not skip_images:
+            for img in self["imgs_in_doc"]:
+                markdown_info["markdown_images"][img["path"]] = img["img"]
 
         return markdown_info
 
@@ -725,6 +753,9 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
             pretty (Optional[bool]): whether to pretty markdown by HTML, default by True.
             show_formula_number (bool): whether to show formula numbers.
             skip_images (bool): whether to skip image tags in markdown text.
+                If True, image/chart figures are omitted but recognized text (when
+                ``use_ocr_for_image_block`` / ``use_seal_recognition``) and chart
+                tables (when ``use_chart_recognition``) are still written.
 
         Returns:
             dict: Markdown information with text and images.
@@ -740,15 +771,24 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
             original_image_width = self["width"]
 
         if skip_images:
-            # When skip_images is True, don't generate image tags in markdown
             if pretty:
                 format_text_func = lambda block: format_centered_by_html(
                     format_text_plain_func(block)
                 )
             else:
                 format_text_func = lambda block: block.content
-            format_image_func = lambda block: ""
-            format_seal_func = lambda block: ""
+            format_image_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_ocr_for_image_block,
+                remove_symbol_if_pretty=not use_ocr_for_image_block,
+            )
+            format_seal_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_seal_recognition,
+                remove_symbol_if_pretty=False,
+            )
         elif pretty:
             format_text_func = lambda block: format_centered_by_html(
                 format_text_plain_func(block)
@@ -778,12 +818,13 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
                 block, use_seal_recognition
             )
 
+        use_chart_recognition = self["model_settings"].get(
+            "use_chart_recognition", False
+        )
         format_chart_func = (
-            (lambda block: "") if skip_images else (
-                format_chart2table_func
-                if self["model_settings"]["use_chart_recognition"]
-                else format_image_func
-            )
+            format_chart2table_func
+            if use_chart_recognition
+            else ((lambda block: "") if skip_images else format_image_func)
         )
 
         if pretty:
@@ -809,7 +850,7 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
         markdown_info["markdown_images"] = {}
         for idx, block in enumerate(self["parsing_res_list"]):
             label = block.label
-            if block.image is not None:
+            if not skip_images and block.image is not None:
                 markdown_info["markdown_images"][block.image["path"]] = block.image[
                     "img"
                 ]
@@ -835,7 +876,8 @@ class PaddleOCRVLPagesResult(PaddleOCRVLResult):
         markdown_info["page_index"] = self["page_index"]
         markdown_info["input_path"] = self["input_path"]
         markdown_info["markdown_texts"] = markdown_content
-        for img in self["imgs_in_doc"]:
-            markdown_info["markdown_images"][img["path"]] = img["img"]
+        if not skip_images:
+            for img in self["imgs_in_doc"]:
+                markdown_info["markdown_images"][img["path"]] = img["img"]
 
         return markdown_info
