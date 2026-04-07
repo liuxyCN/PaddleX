@@ -507,6 +507,15 @@ class DocVLMPredictor(BasePredictor):
                         f"{repr(self._genai_client.backend)} does not support `max_pixels`."
                     )
 
+            if (
+                getattr(self, "_genai_config", None) is not None
+                and self._genai_config.extra_body
+            ):
+                kwargs["extra_body"] = {
+                    **kwargs["extra_body"],
+                    **self._genai_config.extra_body,
+                }
+
             future = self._genai_client.create_chat_completion(
                 [
                     {
