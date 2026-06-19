@@ -48,6 +48,9 @@ class GenAIConfig(BaseModel):
     server_url: Optional[str] = None
     max_concurrency: int = 200
     client_kwargs: Optional[Dict[str, Any]] = None
+    # Merged into chat.completions `extra_body` (OpenAI SDK) for server backends,
+    # e.g. ``thinking: {type: disabled}`` on APIs that support it.
+    extra_body: Optional[Dict[str, Any]] = None
 
     @model_validator(mode="after")
     def check_server_url(self):

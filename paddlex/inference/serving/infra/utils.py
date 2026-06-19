@@ -242,6 +242,13 @@ def image_bytes_to_array(data: bytes) -> np.ndarray:
     return arr
 
 
+def _file_image_bytes_to_array(file_bytes: bytes) -> Optional[np.ndarray]:
+    try:
+        return image_bytes_to_array(file_bytes)
+    except ValueError:
+        return None
+
+
 def image_bytes_to_image(data: bytes) -> Image.Image:
     return Image.open(io.BytesIO(data))
 
@@ -403,11 +410,21 @@ def file_to_images(
                 if getattr(img, "n_frames", 1) > 1:
                     images, data_info = read_tiff(file_bytes, max_num_imgs=max_num_imgs)
                 else:
-                    images = [image_bytes_to_array(file_bytes)]
-                    data_info = get_image_info(images[0])
+                    image = _file_image_bytes_to_array(file_bytes)
+                    if image is None:
+                        images = []
+                        data_info = ImageInfo(width=0, height=0)
+                    else:
+                        images = [image]
+                        data_info = get_image_info(image)
         else:
-            images = [image_bytes_to_array(file_bytes)]
-            data_info = get_image_info(images[0])
+            image = _file_image_bytes_to_array(file_bytes)
+            if image is None:
+                images = []
+                data_info = ImageInfo(width=0, height=0)
+            else:
+                images = [image]
+                data_info = get_image_info(image)
     elif file_type == "PDF":
         images, data_info = read_pdf(file_bytes, max_num_imgs=max_num_imgs)
     else:

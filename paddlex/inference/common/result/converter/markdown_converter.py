@@ -39,6 +39,7 @@ class MarkdownConverter:
         use_seg_flag=False,
         get_seg_flag_func=None,
         imgs_in_doc=None,
+        skip_images=False,
     ) -> dict:
         """Convert *blocks* to Markdown.
 
@@ -55,6 +56,7 @@ class MarkdownConverter:
             get_seg_flag_func: ``(block, prev_block) -> (start, end)`` called
                 when *use_seg_flag* is *True*.
             imgs_in_doc: Extra images to include (list of ``{"path", "img"}``).
+            skip_images: If *True*, omit image tags and exclude images from output.
 
         Returns:
             dict with keys ``markdown_texts``, ``markdown_images``, and
@@ -74,7 +76,7 @@ class MarkdownConverter:
             label = block.label
 
             # --- collect images ---
-            if block.image is not None:
+            if not skip_images and block.image is not None:
                 markdown_images[block.image["path"]] = block.image["img"]
 
             # --- paragraph continuity (result_v2 only) ---
@@ -129,7 +131,7 @@ class MarkdownConverter:
                 seg_end_flag,
             )
 
-        if imgs_in_doc:
+        if imgs_in_doc and not skip_images:
             for img in imgs_in_doc:
                 result["markdown_images"][img["path"]] = img["img"]
 

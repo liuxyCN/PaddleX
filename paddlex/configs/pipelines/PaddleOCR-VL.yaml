@@ -86,6 +86,15 @@ SubModules:
     batch_size: -1
     genai_config:
       backend: native
+    # Optional: OpenAI-compatible server only for image/header_image/footer_image when use_ocr_for_image_block is true.
+    # Optional key `query` (default OCR:) is popped before GenAIConfig validation and sent as the text part of the VLM request.
+    # image_block_genai_config:
+    #   backend: vllm-server
+    #   server_url: http://127.0.0.1:8000/v1
+    #   query: "OCR:"
+    #   extra_body:
+    #     thinking:
+    #       type: disabled
 
 SubPipelines:
   DocPreprocessor:

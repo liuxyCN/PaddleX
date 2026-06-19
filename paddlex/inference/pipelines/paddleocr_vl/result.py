@@ -107,6 +107,22 @@ class PaddleOCRVLBlock(object):
         return _str
 
 
+def _markdown_skip_image_keep_text(
+    block, *, pretty: bool, show_content: bool, collapse_newlines_if_pretty: bool
+) -> str:
+    """No image tags; emit recognized text only when ``show_content`` is True."""
+    if not show_content:
+        return ""
+    content = block.content if block.content is not None else ""
+    if not str(content).strip():
+        return ""
+    if pretty:
+        return format_centered_by_html(
+            content, collapse_newlines=collapse_newlines_if_pretty
+        )
+    return content
+
+
 @class_requires_deps("opencv-contrib-python")
 class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin, WordMixin):
     """
@@ -290,7 +306,7 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin, WordM
         data["parsing_res_list"] = parsing_res_list
         return JsonMixin._to_str(data, *args, **kwargs)
 
-    def _build_handle_funcs_dict(self, pretty=True):
+    def _build_handle_funcs_dict(self, pretty=True, skip_images=False):
         """Build label-to-handler mapping for content formatting."""
         use_ocr_for_image_block = self["model_settings"].get(
             "use_ocr_for_image_block", False
@@ -298,7 +314,26 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin, WordM
         use_seal_recognition = self["model_settings"].get("use_seal_recognition", False)
         original_image_width = self._page_image_width()
 
-        if pretty:
+        if skip_images:
+            if pretty:
+                format_text_func = lambda block: format_centered_by_html(
+                    format_text_plain(block)
+                )
+            else:
+                format_text_func = lambda block: block.content
+            format_image_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_ocr_for_image_block,
+                collapse_newlines_if_pretty=not use_ocr_for_image_block,
+            )
+            format_seal_func = lambda block: _markdown_skip_image_keep_text(
+                block,
+                pretty=pretty,
+                show_content=use_seal_recognition,
+                collapse_newlines_if_pretty=False,
+            )
+        elif pretty:
             format_text_func = lambda block: format_centered_by_html(
                 format_text_plain(block)
             )
@@ -327,10 +362,13 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin, WordM
                 block, show_ocr_content=use_seal_recognition
             )
 
+        use_chart_recognition = self["model_settings"].get(
+            "use_chart_recognition", False
+        )
         format_chart_func = (
             format_chart2html_table
-            if self["model_settings"].get("use_chart_recognition", False)
-            else format_image_func
+            if use_chart_recognition
+            else ((lambda block: "") if skip_images else format_image_func)
         )
 
         if not self["model_settings"].get("use_layout_detection", False):
@@ -459,25 +497,29 @@ class PaddleOCRVLResult(BaseCVResult, HtmlMixin, XlsxMixin, MarkdownMixin, WordM
 
         return JsonMixin._to_json(data, *args, **kwargs)
 
-    def _to_markdown(self, pretty=True, show_formula_number=False) -> dict:
+    def _to_markdown(self, pretty=True, show_formula_number=False, skip_images=False) -> dict:
         """
         Save the parsing result to a Markdown file.
 
         Args:
             pretty (Optional[bool]): whether to pretty markdown by HTML, default by True.
             show_formula_number (bool): whether to show formula numbers.
+            skip_images (bool): whether to skip image tags in markdown text.
 
         Returns:
             dict: Markdown information with text and images.
         """
 
-        handle_funcs_dict = self._build_handle_funcs_dict(pretty=pretty)
+        handle_funcs_dict = self._build_handle_funcs_dict(
+            pretty=pretty, skip_images=skip_images
+        )
 
         result = MarkdownConverter.convert(
             self["parsing_res_list"],
             handle_funcs_dict=handle_funcs_dict,
             show_formula_number=show_formula_number,
             imgs_in_doc=self["imgs_in_doc"],
+            skip_images=skip_images,
         )
         result["page_index"] = self["page_index"]
         result["input_path"] = self["input_path"]

@@ -106,6 +106,7 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
             md_data = item._to_markdown(
                 pretty=request.prettifyMarkdown,
                 show_formula_number=request.showFormulaNumber,
+                skip_images=not request.returnMarkdownImages,
             )
             md_text = md_data["markdown_texts"]
             if request.returnMarkdownImages:
@@ -193,7 +194,11 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
         for i, page in enumerate(request.pages):
             orig_res = _to_original_result(page.prunedResult, i)
             original_results.append(orig_res)
-            if request.concatenatePages and page.markdownImages:
+            if (
+                request.concatenatePages
+                and request.returnMarkdownImages
+                and page.markdownImages
+            ):
                 markdown_images.update(page.markdownImages)
 
         restructured_results = await serving_utils.call_async(
@@ -215,6 +220,7 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
             md_data = restructured_results[0]._to_markdown(
                 pretty=request.prettifyMarkdown,
                 show_formula_number=request.showFormulaNumber,
+                skip_images=not request.returnMarkdownImages,
             )
             layout_parsing_result["markdown"] = dict(
                 text=md_data["markdown_texts"],
@@ -243,6 +249,7 @@ def create_pipeline_app(pipeline: Any, app_config: AppConfig) -> "FastAPI":
                 md_data = new_res._to_markdown(
                     pretty=request.prettifyMarkdown,
                     show_formula_number=request.showFormulaNumber,
+                    skip_images=not request.returnMarkdownImages,
                 )
                 layout_parsing_result["markdown"] = dict(
                     text=md_data["markdown_texts"],

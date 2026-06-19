@@ -559,6 +559,15 @@ class DocVLMGenAIClientPredictor(GenAIClientPredictor):
                         f"{repr(client.backend)} does not support `max_pixels`."
                     )
 
+            if (
+                getattr(self, "_genai_config", None) is not None
+                and self._genai_config.extra_body
+            ):
+                request_kwargs["extra_body"] = {
+                    **request_kwargs["extra_body"],
+                    **self._genai_config.extra_body,
+                }
+
             messages = [
                 {
                     "role": "user",

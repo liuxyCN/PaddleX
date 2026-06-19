@@ -144,12 +144,32 @@ class _PaddleOCRVLPipeline(BasePipeline):
             self.use_chart_recognition = config.get("use_chart_recognition", False)
             self.use_seal_recognition = config.get("use_seal_recognition", False)
 
-            vl_rec_config = config.get("SubModules", {}).get(
-                "VLRecognition",
-                {"model_config_error": "config error for vl_rec_model!"},
+            vl_rec_config = dict(
+                config.get("SubModules", {}).get(
+                    "VLRecognition",
+                    {"model_config_error": "config error for vl_rec_model!"},
+                )
+            )
+            image_block_genai_cfg = vl_rec_config.pop(
+                "image_block_genai_config", None
             )
 
             self.vl_rec_model = self.create_model(vl_rec_config)
+            self.image_block_vlm_query = "OCR:"
+            if image_block_genai_cfg is not None:
+                image_block_genai_cfg = dict(image_block_genai_cfg)
+                self.image_block_vlm_query = image_block_genai_cfg.pop(
+                    "query", "OCR:"
+                )
+                self.vl_rec_model_image_block = self.create_model(
+                    {
+                        **vl_rec_config,
+                        "genai_config": image_block_genai_cfg,
+                        "model_dir": None,
+                    }
+                )
+            else:
+                self.vl_rec_model_image_block = None
             self.format_block_content = config.get("format_block_content", False)
             self.use_ocr_for_image_block = config.get("use_ocr_for_image_block", False)
 
@@ -186,6 +206,8 @@ class _PaddleOCRVLPipeline(BasePipeline):
     def close(self):
         if hasattr(self, "vl_rec_model"):
             self.vl_rec_model.close()
+        if getattr(self, "vl_rec_model_image_block", None) is not None:
+            self.vl_rec_model_image_block.close()
 
     def get_model_settings(
         self,
@@ -451,6 +473,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
         has_spotting = False
         drop_figures_set = set()
         batch_dict_by_pixel = {}
+        batch_image_dict_by_pixel = {}
         id2pixel_key_map = {}
         for (
             _,
@@ -471,33 +494,54 @@ class _PaddleOCRVLPipeline(BasePipeline):
                 pixel_key,
                 figure_token_map,
             ) in page_vlm_entries:
-                if pixel_key not in batch_dict_by_pixel:
-                    batch_dict_by_pixel[pixel_key] = {
+                block_label = blocks_for_img[j]["label"]
+                use_image_remote = (
+                    getattr(self, "vl_rec_model_image_block", None) is not None
+                    and self.use_ocr_for_image_block
+                    and block_label in IMAGE_LABELS
+                )
+                if use_image_remote:
+                    text_prompt = getattr(self, "image_block_vlm_query", "OCR:")
+                target_batch = (
+                    batch_image_dict_by_pixel
+                    if use_image_remote
+                    else batch_dict_by_pixel
+                )
+                if pixel_key not in target_batch:
+                    target_batch[pixel_key] = {
                         "images": [],
                         "queries": [],
                         "figure_token_maps": [],
                         "vlm_block_ids": [],
                         "curr_vlm_block_idx": 0,
                     }
-                batch_dict_by_pixel[pixel_key]["images"].append(block_img)
-                batch_dict_by_pixel[pixel_key]["queries"].append(text_prompt)
-                batch_dict_by_pixel[pixel_key]["figure_token_maps"].append(
+                target_batch[pixel_key]["images"].append(block_img)
+                target_batch[pixel_key]["queries"].append(text_prompt)
+                target_batch[pixel_key]["figure_token_maps"].append(
                     figure_token_map
                 )
-                batch_dict_by_pixel[pixel_key]["vlm_block_ids"].append((i, j))
-                id2pixel_key_map[(i, j)] = pixel_key
+                target_batch[pixel_key]["vlm_block_ids"].append((i, j))
+                id2pixel_key_map[(i, j)] = (
+                    "image" if use_image_remote else "main",
+                    pixel_key,
+                )
 
         return (
             blocks,
             has_spotting,
             drop_figures_set,
             batch_dict_by_pixel,
+            batch_image_dict_by_pixel,
             id2pixel_key_map,
         )
 
     @benchmark.timeit_with_options(name="paddleocr_vl_run_vl_recognition_batches")
     def _paddleocr_vl_run_vl_recognition_batches(
-        self, batch_dict_by_pixel, has_spotting, vlm_kwargs
+        self,
+        batch_dict_by_pixel,
+        batch_image_dict_by_pixel,
+        has_spotting,
+        vlm_kwargs,
     ):
         if vlm_kwargs is None:
             vlm_kwargs = {}
@@ -530,11 +574,38 @@ class _PaddleOCRVLPipeline(BasePipeline):
             del pv_images, queries
             batch_dict_by_pixel[pixel_key]["vlm_results"] = batch_results
 
+        for pixel_key in batch_image_dict_by_pixel:
+            min_px, max_px = pixel_key
+            kwargs = {
+                "use_cache": True,
+                "min_pixels": min_px,
+                "max_pixels": max_px,
+                **vlm_kwargs,
+            }
+            pv_images = batch_image_dict_by_pixel[pixel_key]["images"]
+            queries = batch_image_dict_by_pixel[pixel_key]["queries"]
+            batch_results = list(
+                self.vl_rec_model_image_block.predict(
+                    [
+                        {
+                            "image": image,
+                            "query": query,
+                        }
+                        for image, query in zip(pv_images, queries)
+                    ],
+                    skip_special_tokens=True,
+                    **kwargs,
+                )
+            )
+            del pv_images, queries
+            batch_image_dict_by_pixel[pixel_key]["vlm_results"] = batch_results
+
     @benchmark.timeit_with_options(name="paddleocr_vl_assemble_parsing_results")
     def _paddleocr_vl_assemble_parsing_results(
         self,
         blocks,
         batch_dict_by_pixel,
+        batch_image_dict_by_pixel,
         id2pixel_key_map,
         drop_figures_set,
         vis_image_labels,
@@ -555,8 +626,12 @@ class _PaddleOCRVLPipeline(BasePipeline):
                 block_content = ""
                 figure_token_map = {}
                 if (i, j) in id2pixel_key_map:
-                    pixel_key = id2pixel_key_map[(i, j)]
-                    pixel_info = batch_dict_by_pixel[pixel_key]
+                    src, pixel_key = id2pixel_key_map[(i, j)]
+                    pixel_info = (
+                        batch_image_dict_by_pixel[pixel_key]
+                        if src == "image"
+                        else batch_dict_by_pixel[pixel_key]
+                    )
                     curr_vlm_block_idx = pixel_info["curr_vlm_block_idx"]
                     assert curr_vlm_block_idx < len(
                         pixel_info["vlm_block_ids"]
@@ -735,13 +810,17 @@ class _PaddleOCRVLPipeline(BasePipeline):
             has_spotting,
             drop_figures_set,
             batch_dict_by_pixel,
+            batch_image_dict_by_pixel,
             id2pixel_key_map,
         ) = self._paddleocr_vl_aggregate_vlm_batches(page_results)
 
         del images, layout_det_results, page_results
 
         self._paddleocr_vl_run_vl_recognition_batches(
-            batch_dict_by_pixel, has_spotting, vlm_kwargs
+            batch_dict_by_pixel,
+            batch_image_dict_by_pixel,
+            has_spotting,
+            vlm_kwargs,
         )
 
         (
@@ -751,6 +830,7 @@ class _PaddleOCRVLPipeline(BasePipeline):
         ) = self._paddleocr_vl_assemble_parsing_results(
             blocks,
             batch_dict_by_pixel,
+            batch_image_dict_by_pixel,
             id2pixel_key_map,
             drop_figures_set,
             vis_image_labels,
